@@ -6,7 +6,9 @@ import sys
 import json
 import time
 import threading
+import re
 from datetime import datetime
+from typing import Optional
 
 from lark_oapi.ws import Client as WSClient
 from lark_oapi import LogLevel
@@ -107,6 +109,41 @@ def transcribe_audio(file_key: str) -> str:
     return ""
 
 
+def extract_target_phone(text: str) -> tuple[str, str]:
+    """从文本中提取指定拨打的手机号。
+    支持格式：
+      "打电话给138xxxx提醒他..." -> 返回 ("138xxxx...", 清理后的文本)
+      "打给138xxxx..." -> 同上
+    """
+    m = re.search(r"(?:打?电话?给|通知|呼叫|给)(1[3-9]\d{9})", text)
+    if m:
+        phone = m.group(1)
+        clean_text = text.replace(m.group(0), "").strip()
+        return phone, clean_text
+    return "", text
+
+
+def strip_time_phrases(text: str) -> str:
+    """去除文本开头的时间描述和电话动作，只保留核心内容"""
+    t = text.strip()
+    # 中文数字映射
+    _cn = r"[一二两三四五六七八九十\d]+"
+    # 相对时间: "一分钟后" "5分钟后" "3个小时后"
+    t = re.sub(r"^(?:" + _cn + r")分[钟]?(?:后|之[后後])[,，\s]*", "", t)
+    t = re.sub(r"^(?:" + _cn + r")个小时?[后之][,，\s]*", "", t)
+    # 具体时间: "12:20" "12:15"
+    t = re.sub(r"^\d{1,2}[:：]\d{2}[,，\s]*", "", t)
+    # 日期
+    t = re.sub(r"^(?:大?后天|明天|今晚|明早|今天)[,，\s]*", "", t)
+    t = re.sub(r"^[下这]个?[周星期][一二三四五六日天\d][,，\s]*", "", t)
+    # 时间段 + 时间点
+    t = re.sub(r"^(?:上午|下午|晚上|早上|凌晨|中午)(?:" + _cn + r")?点(?:" + _cn + r")?分?[,，\s]*", "", t)
+    t = re.sub(r"^(?:" + _cn + r")点(?:" + _cn + r")?分?[,，\s]*", "", t)
+    # "打电话" 前缀
+    t = re.sub(r"^打?电话[,，\s]*", "", t)
+    return t.strip() or text
+
+
 def handle_text_message(open_id: str, text: str, msg_id: str):
     """处理文字消息"""
     text = text.strip()
@@ -121,6 +158,12 @@ def handle_text_message(open_id: str, text: str, msg_id: str):
             from db import bind_phone
             bind_phone(open_id, phone)
             send_feishu_message(open_id, f"✅ 已绑定手机号：{phone}")
+            return
+
+        if cmd in ("unbind", "解绑", "取消绑定"):
+            from db import bind_phone
+            bind_phone(open_id, "")
+            send_feishu_message(open_id, "✅ 已解绑手机号，不会再接到电话提醒")
             return
 
         if cmd in ("help", "帮助"):
@@ -202,16 +245,27 @@ def handle_text_message(open_id: str, text: str, msg_id: str):
         return
 
     remind_time = time_obj.strftime("%Y-%m-%d %H:%M")
-    # 提取待办内容（去除时间描述部分）
-    content = text
-    todo_id = add_todo(open_id, content, remind_time, msg_id)
+    # 提取指定拨打的手机号
+    target_phone, clean_text = extract_target_phone(text)
+    # 如果没有指定号码，用用户绑定的号码
+    if not target_phone:
+        from db import get_user
+        user = get_user(open_id)
+        if user and user.get("phone"):
+            target_phone = user["phone"]
+    # 去除时间前缀，只保留核心内容
+    core = strip_time_phrases(clean_text or text)
+    content = core
+    todo_id = add_todo(open_id, content, remind_time, msg_id, target_phone)
 
     print(f"  ✅ 已记录: [{remind_time}] {content[:50]}", flush=True)
 
+    phone_line = f"\nTEL: {target_phone}" if target_phone else ""
     send_feishu_message(open_id,
         f"✅ 已记录！\n"
         f"📝 内容：{content[:50]}\n"
         f"⏰ 时间：{remind_time}"
+        f"{phone_line}"
     )
 
 

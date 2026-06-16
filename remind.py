@@ -6,6 +6,7 @@ import sys
 import json
 import time
 import ssl as ssl_mod
+import threading
 from datetime import datetime
 from urllib.request import Request, urlopen
 
@@ -105,6 +106,38 @@ def make_phone_call(phone: str, content: str) -> dict:
         return {"code": -1, "msg": str(e)}
 
 
+def _query_duration(call_id: str, open_id: str):
+    """异步查询通话时长，查询到后发送飞书通知"""
+    time.sleep(20)
+    try:
+        from alibabacloud_dyvmsapi20170525.client import Client as _C
+        from alibabacloud_dyvmsapi20170525.models import QueryCallDetailByCallIdRequest
+        from alibabacloud_tea_openapi.models import Config as _Config
+
+        qc = _C(_Config(
+            access_key_id=AK_ID, access_key_secret=AK_SECRET,
+            endpoint='dyvmsapi.aliyuncs.com'
+        ))
+        for _ in range(3):
+            try:
+                qr = qc.query_call_detail_by_call_id(
+                    QueryCallDetailByCallIdRequest(call_id=call_id, prod_id=0))
+                if qr.body.code == "OK":
+                    import json as _j
+                    det = _j.loads(qr.body.data)
+                    sec = det.get("duration", 0)
+                    if sec and int(sec) > 0:
+                        send_feishu_message(open_id,
+                            f"📞 通话完成（{sec} 秒）")
+                        return
+            except:
+                pass
+            time.sleep(10)
+        print(f"  查询 {call_id} 通话时长超时")
+    except Exception as e:
+        print(f"  查询 {call_id} 通话时长失败: {e}")
+
+
 # ─── 主循环 ───
 
 
@@ -120,7 +153,7 @@ def check_and_call():
         todo_id = todo["id"]
         content = todo["content"]
         user_open_id = todo["open_id"]
-        phone = todo.get("phone") or DEFAULT_PHONE
+        phone = todo.get("target_phone") or todo.get("user_phone") or DEFAULT_PHONE
 
         if not phone:
             print(f"  [{todo_id}] 无手机号 (user={user_open_id})，跳过")
@@ -132,11 +165,15 @@ def check_and_call():
         result = make_phone_call(phone, content)
 
         if result.get("code") == 0:
-            print(f"  [{todo_id}] ✅ 电话已发起, call_id={result.get('call_id')}")
+            call_id = result.get("call_id", "")
+            print(f"  [{todo_id}] ✅ 电话已发起, call_id={call_id}")
             mark_done(todo_id)
-            # 飞书通知
-            send_feishu_message(user_open_id,
-                                f"📞 已致电提醒：{content[:50]}")
+
+            # 异步查询通话时长
+            if call_id:
+                threading.Thread(target=_query_duration,
+                    args=(call_id, user_open_id),
+                    daemon=True).start()
         else:
             print(f"  [{todo_id}] ❌ 呼叫失败: {result.get('msg')}")
             # 检查重试次数

@@ -32,11 +32,17 @@ def init_db():
             remind_time TEXT NOT NULL,
             status TEXT DEFAULT 'pending',
             msg_id TEXT DEFAULT '',
+            target_phone TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now', 'localtime')),
             FOREIGN KEY (user_open_id) REFERENCES users(open_id)
         );
         CREATE INDEX IF NOT EXISTS idx_todos_status ON todos(status, remind_time);
     """)
+    # 兼容旧表：如果 target_phone 列不存在则添加
+    try:
+        conn.execute("ALTER TABLE todos ADD COLUMN target_phone TEXT DEFAULT ''")
+    except:
+        pass
     conn.commit()
     conn.close()
 
@@ -75,11 +81,12 @@ def get_user(open_id: str) -> Optional[dict]:
 # ─── 待办操作 ───
 
 
-def add_todo(user_open_id: str, content: str, remind_time: str, msg_id: str = "") -> int:
+def add_todo(user_open_id: str, content: str, remind_time: str,
+              msg_id: str = "", target_phone: str = "") -> int:
     conn = get_conn()
     cur = conn.execute(
-        "INSERT INTO todos (user_open_id, content, remind_time, msg_id) VALUES (?, ?, ?, ?)",
-        (user_open_id, content, remind_time, msg_id),
+        "INSERT INTO todos (user_open_id, content, remind_time, msg_id, target_phone) VALUES (?, ?, ?, ?, ?)",
+        (user_open_id, content, remind_time, msg_id, target_phone),
     )
     conn.commit()
     todo_id = cur.lastrowid
@@ -92,7 +99,7 @@ def get_due_todos() -> list:
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     conn = get_conn()
     rows = conn.execute(
-        """SELECT t.*, u.phone, u.open_id
+        """SELECT t.*, u.phone as user_phone, u.open_id
            FROM todos t
            JOIN users u ON t.user_open_id = u.open_id
            WHERE t.status='pending' AND t.remind_time <= ?""",
