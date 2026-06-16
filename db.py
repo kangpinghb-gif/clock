@@ -149,3 +149,35 @@ def get_weekly_summary() -> dict:
     """).fetchone()
     conn.close()
     return dict(row) if row else {"total": 0, "done_count": 0, "pending_count": 0}
+
+
+def cancel_todo(todo_id: int, open_id: str) -> bool:
+    """撤销指定待办（仅待办创建者可撤销）"""
+    conn = get_conn()
+    cur = conn.execute(
+        "UPDATE todos SET status='cancelled' WHERE id=? AND user_open_id=? AND status='pending'",
+        (todo_id, open_id),
+    )
+    conn.commit()
+    affected = cur.rowcount
+    conn.close()
+    return affected > 0
+
+
+def cancel_todo_by_content(open_id: str, keyword: str) -> list:
+    """通过内容关键词搜索待办并撤销，返回已撤销的数量"""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT id FROM todos WHERE user_open_id=? AND status='pending' AND content LIKE ?",
+        (open_id, f"%{keyword}%"),
+    ).fetchall()
+    ids = [r["id"] for r in rows]
+    if ids:
+        placeholders = ",".join("?" for _ in ids)
+        conn.execute(
+            f"UPDATE todos SET status='cancelled' WHERE id IN ({placeholders})",
+            ids,
+        )
+        conn.commit()
+    conn.close()
+    return ids

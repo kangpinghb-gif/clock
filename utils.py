@@ -104,19 +104,24 @@ def parse_time(text: str) -> Optional[datetime]:
         target = target.replace(hour=0, minute=0, second=0, microsecond=0)
 
     # 时间偏移: 上午/下午/早上/晚上/中午
-    ampm_offset = 0
+    has_ampm = False
     if any(w in text for w in ["下午", "晚上", "傍晚"]):
         ampm_offset = 12
-    if any(w in text for w in ["凌晨"]):
+        has_ampm = True
+    elif any(w in text for w in ["凌晨"]):
         ampm_offset = 0
+        has_ampm = True
+    else:
+        ampm_offset = None
+        has_ampm = False
 
     # 提取具体时间
     times = _extract_time_numbers(text)
     if times:
         hour, minute = times[0]
-        if ampm_offset == 12 and hour < 12:
+        if has_ampm and ampm_offset == 12 and hour < 12:
             hour += 12
-        if ampm_offset == 0 and hour >= 12:
+        if has_ampm and ampm_offset == 0 and hour >= 12:
             hour -= 12
         target = target.replace(hour=hour % 24, minute=minute % 60)
     elif any(w in text for w in ["上午", "早上"]):

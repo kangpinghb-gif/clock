@@ -134,7 +134,10 @@ def handle_text_message(open_id: str, text: str, msg_id: str):
                 "📱 绑定手机：\n"
                 "   /bind 138xxxx8000\n\n"
                 "📊 查看待办：\n"
-                "   /list"
+                "   /list\n\n"
+                "❌ 撤销待办：\n"
+                "   /cancel <编号>  按编号撤销\n"
+                "   /cancel <关键词>  按内容搜索撤销"
             )
             return
 
@@ -148,9 +151,43 @@ def handle_text_message(open_id: str, text: str, msg_id: str):
             lines = [f"📋 待办列表（待处理 {pending} 条）"]
             for t in todos[:10]:
                 status = "⏳" if t["status"] == "pending" else ("✅" if t["status"] == "done" else "❌")
-                lines.append(f"{status} {t['remind_time']} {t['content'][:30]}")
+                lines.append(f"{status} #{t['id']} {t['remind_time']} {t['content'][:30]}")
             send_feishu_message(open_id, "\n".join(lines))
             return
+
+        if cmd in ("cancel", "取消", "撤销"):
+            from db import cancel_todo, cancel_todo_by_content
+            if len(cmd_parts) > 1:
+                arg = cmd_parts[1].strip()
+                if arg in ("all", "全部", "所有"):
+                    from db import get_user_todos
+                    all_todos = get_user_todos(open_id)
+                    pending_ids = [t["id"] for t in all_todos if t["status"] == "pending"]
+                    if not pending_ids:
+                        send_feishu_message(open_id, "📭 没有待撤销的待办")
+                        return
+                    count = 0
+                    for tid in pending_ids:
+                        if cancel_todo(tid, open_id):
+                            count += 1
+                    send_feishu_message(open_id, f"✅ 已全部撤销（共 {count} 条）")
+                    return
+                if arg.isdigit():
+                    # 按 ID 撤销
+                    ok = cancel_todo(int(arg), open_id)
+                    if ok:
+                        send_feishu_message(open_id, f"✅ 已撤销 #{arg}")
+                    else:
+                        send_feishu_message(open_id, f"❌ 未找到待办 #{arg}，请确认编号正确或待办尚未过期")
+                else:
+                    # 按关键词查找并撤销
+                    ids = cancel_todo_by_content(open_id, arg)
+                    if ids:
+                        send_feishu_message(open_id, f"✅ 已撤销 {len(ids)} 条待办")
+                    else:
+                        send_feishu_message(open_id, f"❌ 未找到包含「{arg}」的待办")
+            else:
+                send_feishu_message(open_id, "用法：/cancel <待办编号> 或 /cancel <关键词>\n先用 /list 查看编号")
 
         send_feishu_message(open_id, "❌ 未知命令，发送「帮助」查看可用指令")
         return
