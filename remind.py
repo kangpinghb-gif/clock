@@ -155,6 +155,18 @@ def check_and_call():
         user_open_id = todo["open_id"]
         phone = todo.get("target_phone") or todo.get("user_phone") or DEFAULT_PHONE
 
+        # 如果已超过设定时间 10 分钟，标记为失败，不再拨打
+        remind_time = todo.get("remind_time", "")
+        if remind_time:
+            try:
+                remind_dt = datetime.strptime(remind_time, "%Y-%m-%d %H:%M")
+                if (datetime.now() - remind_dt).total_seconds() > 600:
+                    print(f"  [{todo_id}] 已超时 10 分钟，跳过: {remind_time}")
+                    mark_failed(todo_id)
+                    continue
+            except:
+                pass
+
         if not phone:
             print(f"  [{todo_id}] 无手机号 (user={user_open_id})，跳过")
             mark_failed(todo_id)

@@ -256,7 +256,7 @@ def handle_text_message(open_id: str, text: str, msg_id: str):
     # 去除时间前缀，只保留核心内容
     core = strip_time_phrases(clean_text or text)
     content = core
-    todo_id = add_todo(open_id, content, remind_time, msg_id, target_phone)
+    todo_id = add_todo(open_id, content, remind_time, msg_id, target_phone, "feishu")
 
     print(f"  ✅ 已记录: [{remind_time}] {content[:50]}", flush=True)
 

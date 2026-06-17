@@ -43,6 +43,11 @@ def init_db():
         conn.execute("ALTER TABLE todos ADD COLUMN target_phone TEXT DEFAULT ''")
     except:
         pass
+    # 兼容旧表：如果 source 列不存在则添加
+    try:
+        conn.execute("ALTER TABLE todos ADD COLUMN source TEXT DEFAULT ''")
+    except:
+        pass
     conn.commit()
     conn.close()
 
@@ -82,11 +87,11 @@ def get_user(open_id: str) -> Optional[dict]:
 
 
 def add_todo(user_open_id: str, content: str, remind_time: str,
-              msg_id: str = "", target_phone: str = "") -> int:
+              msg_id: str = "", target_phone: str = "", source: str = "") -> int:
     conn = get_conn()
     cur = conn.execute(
-        "INSERT INTO todos (user_open_id, content, remind_time, msg_id, target_phone) VALUES (?, ?, ?, ?, ?)",
-        (user_open_id, content, remind_time, msg_id, target_phone),
+        "INSERT INTO todos (user_open_id, content, remind_time, msg_id, target_phone, source) VALUES (?, ?, ?, ?, ?, ?)",
+        (user_open_id, content, remind_time, msg_id, target_phone, source),
     )
     conn.commit()
     todo_id = cur.lastrowid

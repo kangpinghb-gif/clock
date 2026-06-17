@@ -1,0 +1,19 @@
+[Unit]
+Description=飞书电话提醒系统 - 微信待办旁路监听器
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/todo-voice-caller
+ExecStart=/usr/bin/python3.12 /home/ubuntu/todo-voice-caller/wechat-todo.py
+Restart=always
+RestartSec=5
+Environment="PATH=/usr/bin:/usr/local/bin"
+Environment="HOME=/home/ubuntu"
+Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONPATH=/home/ubuntu/.hermes/profiles/code/home/.local/lib/python3.12/site-packages"
+
+[Install]
+WantedBy=multi-user.target
